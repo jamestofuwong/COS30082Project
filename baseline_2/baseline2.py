@@ -677,22 +677,22 @@ def main():
     # STEP 4: Train Classifier
     print("Training Classifier")
 
-    # # Random Forest 
-    # print("Training Random Forest Classifier...")
-    # clf = RandomForestClassifier(
-    #     n_estimators=200,
-    #     max_depth=30,
-    #     min_samples_split=5,
-    #     n_jobs=-1,
-    #     random_state=42,
-    #     verbose=1
-    # )
-    # clf.fit(X_train, y_train)
-    
-    # SVM (better)
-    print("Training SVM Classifier...")
-    clf = SVC(kernel='rbf', C=1.0, gamma='scale', random_state=42, verbose=False)
+    # Random Forest 
+    print("Training Random Forest Classifier...")
+    clf = RandomForestClassifier(
+        n_estimators=200,
+        max_depth=30,
+        min_samples_split=5,
+        n_jobs=-1,
+        random_state=42,
+        verbose=1
+    )
     clf.fit(X_train, y_train)
+    
+    # # SVM
+    # print("Training SVM Classifier...")
+    # clf = SVC(kernel='rbf', C=1.0, gamma='scale', random_state=42, verbose=False)
+    # clf.fit(X_train, y_train)
     
     print("Classifier training complete!")
     
@@ -710,4 +710,5 @@ def main():
 
 
 if __name__ == "__main__":
+
     main()

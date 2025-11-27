@@ -24,33 +24,27 @@ warnings.filterwarnings('ignore')
 # 1. LOAD DINOV2 MODEL
 # ============================================================================
 
-def load_dinov2_from_kagglehub(device):
-    """Load DINOv2 plant-pretrained model as frozen feature extractor"""
-    import kagglehub
+def load_dinov2_from_saved(device, model_dir):
+    """Load DINOv2 model from saved checkpoint (no download needed)"""
     import timm
+    from pathlib import Path
     
-    print("Loading DINOv2 Feature Extractor from KaggleHub")
-
-    dinov2_path = kagglehub.model_download(
-        "juliostat/dinov2_patch14_reg4_onlyclassifier_then_all/PyTorch/default"
-    )
-
-    # Find checkpoint file
-    ckpt_file = None
-    for root, dirs, files in os.walk(dinov2_path):
-        for f in files:
-            if f.endswith(".pth.tar"):
-                ckpt_file = os.path.join(root, f)
-                break
-        if ckpt_file:
-            break
-
-    if not ckpt_file:
-        raise FileNotFoundError("No .pth.tar checkpoint found.")
-
-    print(f"Found checkpoint: {ckpt_file}")
-    checkpoint = torch.load(ckpt_file, map_location="cpu", weights_only=False)
+    print("Loading DINOv2 Feature Extractor from Saved Checkpoint")
+    
+    model_path = Path(model_dir)
+    dinov2_checkpoint_path = model_path / 'dinov2_model.pth'
+    
+    if not dinov2_checkpoint_path.exists():
+        raise FileNotFoundError(
+            f"DINOv2 checkpoint not found at {dinov2_checkpoint_path}. "
+            "Please run training script first to save the model."
+        )
+    
+    print(f"Loading from: {dinov2_checkpoint_path}")
+    checkpoint = torch.load(dinov2_checkpoint_path, map_location=device, weights_only=False)
+    
     arch_name = checkpoint.get("arch", "vit_base_patch14_reg4_dinov2.lvd142m")
+    print(f"Architecture: {arch_name}")
 
     try:
         dinov2_model = timm.create_model(
@@ -77,13 +71,8 @@ def load_dinov2_from_kagglehub(device):
                 num_classes=0
             )
 
-    state_dict = checkpoint.get("state_dict_ema", checkpoint.get("state_dict"))
-    feature_state_dict = {
-        k: v for k, v in state_dict.items() 
-        if not k.startswith('head.') and not k.startswith('fc.')
-    }
-    
-    dinov2_model.load_state_dict(feature_state_dict, strict=False)
+    # Load the saved weights
+    dinov2_model.load_state_dict(checkpoint['model_state_dict'], strict=False)
     dinov2_model.eval()
 
     for param in dinov2_model.parameters():
@@ -91,7 +80,7 @@ def load_dinov2_from_kagglehub(device):
     
     dinov2_model.to(device)
     
-    print(f"DINOv2 loaded successfully")
+    print(f"DINOv2 loaded successfully from saved checkpoint")
     
     return dinov2_model
 
@@ -503,9 +492,10 @@ def create_summary_csv(results_dict, output_dir='evaluation_results'):
 
 def main():
     """Main evaluation function"""
-    
+
     # Configuration
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    modelpath = 'saved_models/SVM'
     print(f"\nUsing device: {device}")
     
     # Data transforms
@@ -521,10 +511,10 @@ def main():
     paired_classes, unpaired_classes = load_class_lists()
     
     # Load DINOv2 model
-    dinov2_model = load_dinov2_from_kagglehub(device)
+    dinov2_model = load_dinov2_from_saved(device, modelpath)
     
     # Load saved models
-    classifier, normalizer, class_mapping, metadata = load_saved_models('saved_models_no_synthetic')
+    classifier, normalizer, class_mapping, metadata = load_saved_models(modelpath)
     
     # Load test dataset
     print("Loading Test Dataset")

@@ -1,0 +1,4 @@
+Subset,Top-1 Accuracy (%),Top-5 Accuracy (%),Samples
+Overall,78.74,88.89,207
+Paired Classes,96.08,99.35,153
+Unpaired Classes,29.63,59.26,54

@@ -20,23 +20,19 @@ import matplotlib.pyplot as plt
 CONFIG = {
     'dataset_root': 'dataset',
     'train_list': 'dataset/list/train.txt',
-    'num_classes': None,  # Will be set automatically
+    'num_classes': None,  # set after dataset load
     'epochs': 30,
     'batch_size': 32,
     'lr': 1e-3,
     'image_size': 224,
     'val_split': 0.2,
     'seed': 42,
-    'save_dir': 'model5_1',
-    'synthetic_enabled': True,
-    'num_synthetic': 2000,
-    'synthetic_noise_scale': 0.05,
-    'synthetic_mixup_alpha': 0.3
+    'save_dir': 'model'
 }
 
-# ==============================================================
+# ==============================================================#
 # Enhanced Loss Functions
-# ==============================================================
+# ==============================================================#
 class FocalLoss(nn.Module):
     def __init__(self, alpha=1, gamma=2, reduction='mean'):
         super(FocalLoss, self).__init__()
@@ -47,8 +43,7 @@ class FocalLoss(nn.Module):
     def forward(self, inputs, targets):
         ce_loss = F.cross_entropy(inputs, targets, reduction='none')
         pt = torch.exp(-ce_loss)
-        focal_loss = self.alpha * (1-pt)**self.gamma * ce_loss
-        
+        focal_loss = self.alpha * (1.0 - pt) ** self.gamma * ce_loss
         if self.reduction == 'mean':
             return focal_loss.mean()
         elif self.reduction == 'sum':
@@ -67,7 +62,7 @@ class AdaptiveDomainLoss(nn.Module):
     def forward(self, class_logits, domain_logits, targets, domains, has_pairs):
         cls_loss = self.focal_loss(class_logits, targets)
         domain_loss = self.domain_loss(domain_logits, domains)
-        
+
         paired_mask = torch.tensor(has_pairs, dtype=torch.float32).to(class_logits.device)
         paired_cls_loss = (cls_loss * paired_mask * self.paired_weight).mean()
         unpaired_cls_loss = (cls_loss * (1 - paired_mask)).mean()
@@ -88,7 +83,8 @@ def get_enhanced_transform(augment_type='standard'):
             transforms.RandomRotation(15),
             transforms.RandomAffine(degrees=0, shear=10),
             transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+            transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                 std=[0.229, 0.224, 0.225])
         ])
     else:
         return transforms.Compose([
@@ -96,11 +92,12 @@ def get_enhanced_transform(augment_type='standard'):
             transforms.RandomHorizontalFlip(),
             transforms.ColorJitter(0.2, 0.2, 0.2, 0.1),
             transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+            transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                 std=[0.229, 0.224, 0.225])
         ])
 
 # ==============================================================
-# Feature Precomputation
+# Feature Precomputation (DINOv2)
 # ==============================================================
 def precompute_dinov2_features(dataset, device, save_path="dinov2_features.pth"):
     if os.path.exists(save_path):
@@ -109,10 +106,9 @@ def precompute_dinov2_features(dataset, device, save_path="dinov2_features.pth")
         return features_dict['features'], features_dict['labels'], features_dict['domains'], features_dict['has_pairs']
     
     print("Precomputing DINOv2 features...")
-    
     import kagglehub
     import timm
-    
+
     dinov2_path = kagglehub.model_download("juliostat/dinov2_patch14_reg4_onlyclassifier_then_all/PyTorch/default")
     ckpt_file = None
     for root, dirs, files in os.walk(dinov2_path):
@@ -131,12 +127,12 @@ def precompute_dinov2_features(dataset, device, save_path="dinov2_features.pth")
     dinov2_model.eval().to(device)
     
     all_features, all_labels, all_domains, all_has_pairs = [], [], [], []
-    
     dinov2_transform = transforms.Compose([
         transforms.Resize(518),
         transforms.CenterCrop(518),
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                             std=[0.229, 0.224, 0.225])
     ])
     
     with torch.no_grad():
@@ -144,12 +140,10 @@ def precompute_dinov2_features(dataset, device, save_path="dinov2_features.pth")
             img_path, mapped_label, domain, has_pair, _ = dataset[i]
             img = Image.open(img_path).convert('RGB')
             img = dinov2_transform(img).unsqueeze(0).to(device)
-            
             features = dinov2_model(img)
             if isinstance(features, (tuple, list)):
                 features = features[0]
             features = features.flatten(1).cpu()
-            
             all_features.append(features)
             all_labels.append(mapped_label)
             all_domains.append(domain)
@@ -160,8 +154,6 @@ def precompute_dinov2_features(dataset, device, save_path="dinov2_features.pth")
     all_domains = torch.tensor(all_domains, dtype=torch.long)
     all_has_pairs = torch.tensor(all_has_pairs, dtype=torch.bool)
     
-    print(f"Precomputed features shape: {all_features.shape}")
-    
     features_dict = {
         'features': all_features,
         'labels': all_labels,
@@ -170,7 +162,6 @@ def precompute_dinov2_features(dataset, device, save_path="dinov2_features.pth")
     }
     torch.save(features_dict, save_path)
     print("DINOv2 features saved!")
-    
     return all_features, all_labels, all_domains, all_has_pairs
 
 # ==============================================================
@@ -194,12 +185,9 @@ class SimpleDataset(Dataset):
         self.root_dir = Path(root_dir)
         self.samples = []
         
-        self.classes_with_pairs = set()
-        self.classes_without_pairs = set()
-        
+        # read classes with/without pairs
         with open('dataset/list/class_with_pairs.txt', 'r') as f:
             self.classes_with_pairs = set(int(line.strip()) for line in f)
-        
         with open('dataset/list/class_without_pairs.txt', 'r') as f:
             self.classes_without_pairs = set(int(line.strip()) for line in f)
         
@@ -225,21 +213,9 @@ class SimpleDataset(Dataset):
                     num_images = len(list(class_folder.glob('*.jpg'))) + len(list(class_folder.glob('*.png')))
                     photo_counts[class_id] = num_images
 
-        print(f"Photo Domain Analysis:")
-        print(f"Photo classes total: {len(photo_counts)}")
-        print(f"Photo classes with ≤5 samples: {len([c for c in photo_counts.values() if c <= 5])}")
-        print(f"Photo classes with ≤10 samples: {len([c for c in photo_counts.values() if c <= 10])}")
-
         self.minority_classes = [cls for cls in self.class_counts.keys() if cls in photo_counts and photo_counts[cls] <= 10]
         self.majority_classes = [cls for cls in self.class_counts.keys() if cls in photo_counts and photo_counts[cls] > 30]
 
-        print(f"Minority classes (≤10 photo samples): {len(self.minority_classes)}")
-        print(f"Majority classes (>30 photo samples): {len(self.majority_classes)}")
-
-        if self.minority_classes:
-            minority_examples = [(cls, photo_counts[cls]) for cls in list(self.minority_classes)[:5]]
-            print(f"Sample minority classes: {minority_examples}")
-        
         with open(list_file, 'r') as f:
             for line in f:
                 parts = line.strip().split()
@@ -253,7 +229,6 @@ class SimpleDataset(Dataset):
                         mapped_label = self.label_map[original_label]
                         is_minority = original_label in self.minority_classes
                         self.samples.append((str(full_path), mapped_label, domain, has_pair, is_minority))
-        
         print(f"Loaded {len(self.samples)} samples with {self.num_classes} classes")
     
     def __len__(self):
@@ -274,12 +249,10 @@ class EnhancedImageDataset(Dataset):
     def __getitem__(self, idx):
         img_path, label, domain, has_pair, is_minority = self.dataset[idx]
         img = Image.open(img_path).convert('RGB')
-        
         if is_minority and random.random() < 0.7:
             img = self.enhanced_transform(img)
         else:
             img = self.standard_transform(img)
-                
         return img, label, domain, has_pair
 
 # ==============================================================
@@ -290,7 +263,6 @@ class GradReverse(torch.autograd.Function):
     def forward(ctx, x, lambd):
         ctx.lambd = lambd
         return x.view_as(x)
-    
     @staticmethod
     def backward(ctx, grad_output):
         return grad_output.neg() * ctx.lambd, None
@@ -329,18 +301,15 @@ class EnhancedHybridModel(nn.Module):
     def forward(self, resnet_input, dinov2_features, domain_alpha=1.0):
         resnet_features = self.resnet(resnet_input)
         resnet_features = resnet_features.squeeze(3).squeeze(2)
-        
         combined_features = torch.cat([dinov2_features, resnet_features], dim=1)
         fused_features = self.feature_fusion(combined_features)
-        
         class_logits = self.classifier(fused_features)
         rev_features = grad_reverse(fused_features, domain_alpha)
         domain_logits = self.domain_classifier(rev_features)
-        
         return class_logits, domain_logits
 
 # ==============================================================
-# Training Utilities
+# Training Utilities & Synthetic Generators
 # ==============================================================
 def plot_training_metrics(metrics_file, save_dir):
     if not os.path.exists(metrics_file):
@@ -380,51 +349,30 @@ def plot_training_metrics(metrics_file, save_dir):
     ax = axes[0][0]
     ax.plot(epochs, train_losses, label='Train Loss')
     ax.plot(epochs, val_losses, label='Val Loss')
-    ax.set_title('Loss')
-    ax.set_xlabel('Epoch')
-    ax.set_ylabel('Loss')
-    ax.grid(True, linestyle='--', alpha=0.3)
-    ax.legend()
+    ax.set_title('Loss'); ax.set_xlabel('Epoch'); ax.set_ylabel('Loss'); ax.grid(True, linestyle='--', alpha=0.3); ax.legend()
 
     ax = axes[0][1]
     ax.plot(epochs, train_accs, label='Train Acc')
     ax.plot(epochs, val_accs, label='Val Acc')
-    ax.set_title('Accuracy')
-    ax.set_xlabel('Epoch')
-    ax.set_ylabel('Accuracy (%)')
-    ax.grid(True, linestyle='--', alpha=0.3)
-    ax.legend()
+    ax.set_title('Accuracy'); ax.set_xlabel('Epoch'); ax.set_ylabel('Accuracy (%)'); ax.grid(True, linestyle='--', alpha=0.3); ax.legend()
 
     ax = axes[0][2]
     ax.plot(epochs, cls_losses, label='Classification Loss')
     ax.plot(epochs, domain_losses, label='Domain Loss')
-    ax.set_title('Component Losses')
-    ax.set_xlabel('Epoch')
-    ax.set_ylabel('Loss')
-    ax.grid(True, linestyle='--', alpha=0.3)
-    ax.legend()
+    ax.set_title('Component Losses'); ax.set_xlabel('Epoch'); ax.set_ylabel('Loss'); ax.grid(True, linestyle='--', alpha=0.3); ax.legend()
 
     ax = axes[1][0]
     ax.plot(epochs, paired_accs, label='Paired Acc')
     ax.plot(epochs, unpaired_accs, label='Unpaired Acc')
     ax.plot(epochs, minority_accs, label='Minority Acc')
-    ax.set_title('Specialized Accuracies')
-    ax.set_xlabel('Epoch')
-    ax.set_ylabel('Accuracy (%)')
-    ax.grid(True, linestyle='--', alpha=0.3)
-    ax.legend()
+    ax.set_title('Specialized Accuracies'); ax.set_xlabel('Epoch'); ax.set_ylabel('Accuracy (%)'); ax.grid(True, linestyle='--', alpha=0.3); ax.legend()
 
     ax = axes[1][1]
     ax.plot(epochs, learning_rates, label='Learning Rate')
-    ax.set_title('Learning Rate')
-    ax.set_xlabel('Epoch')
-    ax.set_ylabel('LR')
-    ax.grid(True, linestyle='--', alpha=0.3)
-    ax.legend()
+    ax.set_title('Learning Rate'); ax.set_xlabel('Epoch'); ax.set_ylabel('LR'); ax.grid(True, linestyle='--', alpha=0.3); ax.legend()
 
     axes[1][2].axis('off')
     fig.tight_layout()
-    
     out_path = os.path.join(save_dir, 'training_curves.png')
     plt.savefig(out_path)
     plt.close(fig)
@@ -439,128 +387,128 @@ def seed_everything(seed=42):
 
 def analyze_folder_distribution(root_dir):
     print(f"\nAnalyzing Folder Distribution in: {root_dir}")
-    
     photo_path = Path(root_dir) / 'train' / 'photo'
     herbarium_path = Path(root_dir) / 'train' / 'herbarium'
-    
     photo_counts, herbarium_counts = {}, {}
-    
     if photo_path.exists():
         for class_folder in photo_path.iterdir():
             if class_folder.is_dir():
                 class_id = int(class_folder.name)
                 num_images = len(list(class_folder.glob('*.jpg'))) + len(list(class_folder.glob('*.png')))
                 photo_counts[class_id] = num_images
-    
     if herbarium_path.exists():
         for class_folder in herbarium_path.iterdir():
             if class_folder.is_dir():
                 class_id = int(class_folder.name)
                 num_images = len(list(class_folder.glob('*.jpg'))) + len(list(class_folder.glob('*.png')))
                 herbarium_counts[class_id] = num_images
-    
     print(f"Photo classes: {len(photo_counts)}")
     print(f"Herbarium classes: {len(herbarium_counts)}")
-    
     few_photo_classes = {cls: count for cls, count in photo_counts.items() if count <= 10}
     few_herbarium_classes = {cls: count for cls, count in herbarium_counts.items() if count <= 10}
-    
     print(f"Photo classes with ≤10 samples: {len(few_photo_classes)}")
     print(f"Herbarium classes with ≤10 samples: {len(few_herbarium_classes)}")
-    
     return photo_counts, herbarium_counts
-
 
 def generate_synthetic_photo_embeddings(features, labels, domains, has_pairs, target_domain=1, 
                                       num_synthetic=1000, noise_scale=0.1, mixup_alpha=0.2):
-    """
-    Generate synthetic photo-like embeddings in feature space
-    """
-    # Filter photo domain samples
     photo_mask = (domains == target_domain)
     photo_features = features[photo_mask]
     photo_labels = labels[photo_mask]
     photo_has_pairs = has_pairs[photo_mask]
-    
     if len(photo_features) == 0:
         print("No photo domain samples found for synthetic generation")
         return None, None, None, None
-    
-    synthetic_features = []
-    synthetic_labels = []
-    synthetic_domains = []
-    synthetic_has_pairs = []
-    
-    # Generate synthetic samples
+    synthetic_features, synthetic_labels = [], []
+    synthetic_domains, synthetic_has_pairs = [], []
     for _ in range(num_synthetic):
-        # Randomly select base samples
         idx1, idx2 = torch.randint(0, len(photo_features), (2,))
-        
-        # Mixup augmentation
         lam = torch.distributions.Beta(mixup_alpha, mixup_alpha).sample().item()
         mixed_features = lam * photo_features[idx1] + (1 - lam) * photo_features[idx2]
-        
-        # Add noise
         noise = torch.randn_like(mixed_features) * noise_scale
         synthetic_feature = mixed_features + noise
-        
-        # Use label from first sample 
         synthetic_label = photo_labels[idx1]
-        synthetic_domain = target_domain  # Photo domain
+        synthetic_domain = target_domain
         synthetic_has_pair = photo_has_pairs[idx1]
-        
         synthetic_features.append(synthetic_feature.unsqueeze(0))
         synthetic_labels.append(synthetic_label.unsqueeze(0))
         synthetic_domains.append(synthetic_domain)
         synthetic_has_pairs.append(synthetic_has_pair)
-    
     synthetic_features = torch.cat(synthetic_features, dim=0)
     synthetic_labels = torch.cat(synthetic_labels, dim=0)
     synthetic_domains = torch.tensor(synthetic_domains, dtype=torch.long)
     synthetic_has_pairs = torch.tensor(synthetic_has_pairs, dtype=torch.bool)
-    
     print(f"Generated {len(synthetic_features)} synthetic photo embeddings")
-    
+    return synthetic_features, synthetic_labels, synthetic_domains, synthetic_has_pairs
+
+def generate_synthetic_for_classes(features, labels, domains, has_pairs,
+                                 target_classes, num_synthetic=1000,
+                                 preferred_domain=0, noise_scale=0.05, mixup_alpha=0.3):
+    if not target_classes:
+        print("No target classes provided")
+        return None, None, None, None
+    class_mask = torch.isin(labels, torch.tensor(list(target_classes)))
+    domain_mask = (domains == preferred_domain)
+    combined_mask = class_mask & domain_mask
+    target_features = features[combined_mask]
+    target_labels = labels[combined_mask]
+    target_has_pairs = has_pairs[combined_mask]
+    if len(target_features) == 0:
+        print(f"No samples found for {len(target_classes)} target classes in domain {preferred_domain}")
+        return None, None, None, None
+    synthetic_features, synthetic_labels = [], []
+    synthetic_domains, synthetic_has_pairs = [], []
+    for i in range(num_synthetic):
+        if len(target_features) >= 2:
+            idx1, idx2 = torch.randint(0, len(target_features), (2,))
+            lam = torch.distributions.Beta(mixup_alpha, mixup_alpha).sample().item()
+            synthetic_feature = (lam * target_features[idx1] + (1 - lam) * target_features[idx2])
+            noise = torch.randn_like(synthetic_feature) * noise_scale
+            synthetic_feature += noise
+            synthetic_label = target_labels[idx1]
+            synthetic_has_pair = target_has_pairs[idx1]
+        else:
+            base_idx = torch.randint(0, len(target_features), (1,)).item()
+            synthetic_feature = target_features[base_idx] + torch.randn_like(target_features[base_idx]) * (noise_scale * 2)
+            synthetic_label = target_labels[base_idx]
+            synthetic_has_pair = target_has_pairs[base_idx]
+        synthetic_features.append(synthetic_feature.unsqueeze(0))
+        synthetic_labels.append(synthetic_label.unsqueeze(0))
+        synthetic_domains.append(preferred_domain)
+        synthetic_has_pairs.append(synthetic_has_pair)
+    synthetic_features = torch.cat(synthetic_features, dim=0)
+    synthetic_labels = torch.cat(synthetic_labels, dim=0)
+    synthetic_domains = torch.tensor(synthetic_domains, dtype=torch.long)
+    synthetic_has_pairs = torch.tensor(synthetic_has_pairs, dtype=torch.bool)
+    print(f"Generated {len(synthetic_features)} synthetic samples for {len(target_classes)} target classes")
     return synthetic_features, synthetic_labels, synthetic_domains, synthetic_has_pairs
 
 def generate_unpaired_focused_synthetic(features, labels, domains, has_pairs, simple_ds,
                                       total_synthetic=2000, unpaired_ratio=0.6):
-    """Generate synthetic data with focus on unpaired classes"""
-    
-    # Identify unpaired classes (herbarium-only classes)
     unpaired_classes = set()
     for orig_label in simple_ds.classes_without_pairs:
         if orig_label in simple_ds.label_map:
             unpaired_classes.add(simple_ds.label_map[orig_label])
-    
-    # Calculate distribution
-    unpaired_synthetic = int(total_synthetic * unpaired_ratio)  # 60% for unpaired
-    paired_synthetic = total_synthetic - unpaired_synthetic     # 40% for paired
-    
+    unpaired_synthetic = int(total_synthetic * unpaired_ratio)
+    paired_synthetic = total_synthetic - unpaired_synthetic
     print(f"Focused Generation: {unpaired_synthetic} for unpaired, {paired_synthetic} for paired classes")
-    
-    # Generate for unpaired classes (herbarium domain)
     unpaired_results = generate_synthetic_for_classes(
         features, labels, domains, has_pairs,
         target_classes=unpaired_classes,
         num_synthetic=unpaired_synthetic,
-        preferred_domain=0  # Herbarium domain for unpaired
+        preferred_domain=0
     )
-    
-    # Generate for paired classes (photo domain)
     paired_results = generate_synthetic_photo_embeddings(
         features, labels, domains, has_pairs,
         num_synthetic=paired_synthetic,
         noise_scale=0.05,
         mixup_alpha=0.3
     )
-    
     if unpaired_results[0] is not None and paired_results[0] is not None:
         synthetic_features = torch.cat([unpaired_results[0], paired_results[0]], dim=0)
         synthetic_labels = torch.cat([unpaired_results[1], paired_results[1]], dim=0)
         synthetic_domains = torch.cat([unpaired_results[2], paired_results[2]], dim=0)
         synthetic_has_pairs = torch.cat([unpaired_results[3], paired_results[3]], dim=0)
-        
         print(f"Combined: {len(unpaired_results[0])} unpaired + {len(paired_results[0])} paired synthetic samples")
         return synthetic_features, synthetic_labels, synthetic_domains, synthetic_has_pairs
     elif paired_results[0] is not None:
@@ -570,69 +518,6 @@ def generate_unpaired_focused_synthetic(features, labels, domains, has_pairs, si
         print("Both synthetic generations failed")
         return None, None, None, None
 
-def generate_synthetic_for_classes(features, labels, domains, has_pairs,
-                                 target_classes, num_synthetic=1000,
-                                 preferred_domain=0, noise_scale=0.05, mixup_alpha=0.3):
-    """Generate synthetic samples for specific target classes in preferred domain"""
-    
-    if not target_classes:
-        print("No target classes provided")
-        return None, None, None, None
-    
-    # Filter samples from target classes and preferred domain
-    class_mask = torch.isin(labels, torch.tensor(list(target_classes)))
-    domain_mask = (domains == preferred_domain)
-    combined_mask = class_mask & domain_mask
-    
-    target_features = features[combined_mask]
-    target_labels = labels[combined_mask]
-    target_has_pairs = has_pairs[combined_mask]
-    
-    if len(target_features) == 0:
-        print(f"No samples found for {len(target_classes)} target classes in domain {preferred_domain}")
-        return None, None, None, None
-    
-    print(f"Found {len(target_features)} real samples for {len(target_classes)} target classes")
-    
-    synthetic_features = []
-    synthetic_labels = []
-    synthetic_domains = []
-    synthetic_has_pairs = []
-    
-    for i in range(num_synthetic):
-        if len(target_features) >= 2:
-            # Mixup between two samples from target classes
-            idx1, idx2 = torch.randint(0, len(target_features), (2,))
-            lam = torch.distributions.Beta(mixup_alpha, mixup_alpha).sample().item()
-            synthetic_feature = (lam * target_features[idx1] + 
-                               (1 - lam) * target_features[idx2])
-            
-            # Add noise
-            noise = torch.randn_like(synthetic_feature) * noise_scale
-            synthetic_feature += noise
-            
-            # Use label from first sample
-            synthetic_label = target_labels[idx1]
-            synthetic_has_pair = target_has_pairs[idx1]
-        else:
-            # Single sample - just add noise with more variation
-            base_idx = torch.randint(0, len(target_features), (1,)).item()
-            synthetic_feature = target_features[base_idx] + torch.randn_like(target_features[base_idx]) * (noise_scale * 2)
-            synthetic_label = target_labels[base_idx]
-            synthetic_has_pair = target_has_pairs[base_idx]
-        
-        synthetic_features.append(synthetic_feature.unsqueeze(0))
-        synthetic_labels.append(synthetic_label.unsqueeze(0))
-        synthetic_domains.append(preferred_domain)
-        synthetic_has_pairs.append(synthetic_has_pair)
-    
-    synthetic_features = torch.cat(synthetic_features, dim=0)
-    synthetic_labels = torch.cat(synthetic_labels, dim=0)
-    synthetic_domains = torch.tensor(synthetic_domains, dtype=torch.long)
-    synthetic_has_pairs = torch.tensor(synthetic_has_pairs, dtype=torch.bool)
-    
-    print(f"Generated {len(synthetic_features)} synthetic samples for {len(target_classes)} target classes")
-    return synthetic_features, synthetic_labels, synthetic_domains, synthetic_has_pairs
 # ==============================================================
 # Main Training Function
 # ==============================================================
@@ -642,7 +527,6 @@ def train_enhanced_hybrid_model():
     print(f"Using device: {device}")
     
     os.makedirs(CONFIG['save_dir'], exist_ok=True)
-    
     metrics_file = os.path.join(CONFIG['save_dir'], "training_metrics.csv")
     with open(metrics_file, 'w', newline='') as f:
         writer = csv.writer(f)
@@ -652,40 +536,22 @@ def train_enhanced_hybrid_model():
     simple_ds = SimpleDataset(CONFIG['dataset_root'], CONFIG['train_list'])
     dinov2_features, labels, domains, has_pairs = precompute_dinov2_features(simple_ds, device)
     
-    print("Generating synthetic photo embeddings...")
-    
     synthetic_features, synthetic_labels, synthetic_domains, synthetic_has_pairs = generate_unpaired_focused_synthetic(
         dinov2_features, labels, domains, has_pairs, simple_ds,
         total_synthetic=2000,
-        unpaired_ratio=0.6  
+        unpaired_ratio=0.6
     )
 
     if synthetic_features is not None:
-        # Combine real and synthetic data
         combined_features = torch.cat([dinov2_features, synthetic_features], dim=0)
         combined_labels = torch.cat([labels, synthetic_labels], dim=0)
         combined_domains = torch.cat([domains, synthetic_domains], dim=0)
         combined_has_pairs = torch.cat([has_pairs, synthetic_has_pairs], dim=0)
-        
-        print(f"Dataset Statistics:")
-        print(f" Real samples: {len(dinov2_features)}")
-        print(f" Synthetic samples: {len(synthetic_features)}")
-        print(f" Combined dataset: {len(combined_features)}")
-        print(f" Photo domain ratio: {combined_domains.float().mean().item():.3f}")
-        
-        # Use combined dataset
-        precomputed_ds = PrecomputedDataset(
-            combined_features, combined_labels, combined_domains, combined_has_pairs
-        )
+        precomputed_ds = PrecomputedDataset(combined_features, combined_labels, combined_domains, combined_has_pairs)
     else:
-        # Fallback to original dataset if synthetic generation failed
         print("Using original dataset (no synthetic data)")
         precomputed_ds = PrecomputedDataset(dinov2_features, labels, domains, has_pairs)
 
-
-
-
-    
     labels_all = labels.numpy()
     sss = StratifiedShuffleSplit(n_splits=1, test_size=CONFIG['val_split'], random_state=CONFIG['seed'])
     train_idx, val_idx = next(sss.split(np.zeros(len(labels_all)), labels_all))
@@ -734,7 +600,6 @@ def train_enhanced_hybrid_model():
         model.train()
         running_loss, running_correct = 0.0, 0
         running_cls_loss, running_domain_loss = 0.0, 0.0
-        
         current_lr = optimizer.param_groups[0]['lr']
         
         pbar = tqdm(train_loader, desc=f"Epoch {epoch}/{CONFIG['epochs']}")
@@ -745,9 +610,7 @@ def train_enhanced_hybrid_model():
             domains = domains.to(device)
             
             class_logits, domain_logits = model(imgs, features, domain_alpha=1.0)
-            total_loss, cls_loss, domain_loss = criterion(
-                class_logits, domain_logits, labels, domains, has_pairs
-            )
+            total_loss, cls_loss, domain_loss = criterion(class_logits, domain_logits, labels, domains, has_pairs)
             
             optimizer.zero_grad()
             total_loss.backward()
@@ -756,7 +619,6 @@ def train_enhanced_hybrid_model():
             running_loss += total_loss.item()
             running_cls_loss += cls_loss.item()
             running_domain_loss += domain_loss.item()
-            
             preds = class_logits.argmax(dim=1)
             running_correct += (preds == labels).sum().item()
             
@@ -804,11 +666,9 @@ def train_enhanced_hybrid_model():
                 
                 for i in range(len(labels)):
                     label_val = labels[i].item()
-                    
                     if label_val in minority_mapped_labels:
                         minority_total += 1
                         minority_correct += (preds[i] == labels[i]).item()
-                    
                     if label_val in paired_mapped_labels:
                         paired_total += 1
                         paired_correct += (preds[i] == labels[i]).item()

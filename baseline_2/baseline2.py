@@ -374,7 +374,7 @@ class SyntheticEmbeddingGenerator:
 
 
 # ============================================================================
-# 6. MIX-STREAM TRAINING WITH CLASS-AWARE DOMAIN MIXING
+# 6. DOMAIN-MIXED TRAINING WITH CLASS-AWARE BATCH COMPOSITION
 # ============================================================================
 
 class DomainMixingStrategy:
@@ -712,3 +712,4 @@ def main():
 if __name__ == "__main__":
 
     main()
+

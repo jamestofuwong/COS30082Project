@@ -107,7 +107,7 @@ def load_dinov2_from_kagglehub(device):
     print(f"Feature dimension: {feature_dim}")
     print(f"Expected input size: {dinov2_model.patch_embed.img_size}")
     
-    return dinov2_model, feature_dim
+    return dinov2_model, feature_dim, arch_name
 
 
 # ============================================================================
@@ -579,27 +579,36 @@ def train_with_domain_adaptation(dinov2_model, train_loader, device, use_class_c
 # 8. SAVE TRAINED MODELS
 # ============================================================================
 
-def save_trained_model(classifier, normalizer, train_dataset, save_dir='saved_models'):
-    """Save the complete trained model pipeline"""
+def save_trained_model(classifier, normalizer, train_dataset, dinov2_model, arch_name, save_dir='saved_models'):
+    """Save the complete trained model pipeline including DINOv2"""
     
     save_path = Path(save_dir)
     save_path.mkdir(exist_ok=True, parents=True)
     
     print("Saving Trained Models")
     
-    # 1. Save classifier
+    #1. Save DINOv2 model 
+    dinov2_checkpoint = {
+        'arch': arch_name,
+        'model_state_dict': dinov2_model.state_dict()
+    }
+    dinov2_path = save_path / 'dinov2_model.pth'
+    torch.save(dinov2_checkpoint, dinov2_path)
+    print(f"DINOv2 model saved to: {dinov2_path}")
+    
+    #2. Save classifier
     classifier_path = save_path / 'classifier.pkl'
     with open(classifier_path, 'wb') as f:
         pickle.dump(classifier, f)
     print(f"Classifier saved to: {classifier_path}")
     
-    # 2. Save normalizer
+    #3. Save normalizer
     normalizer_path = save_path / 'normalizer.pkl'
     with open(normalizer_path, 'wb') as f:
         pickle.dump(normalizer, f)
     print(f"Normalizer saved to: {normalizer_path}")
     
-    # 3. Save class mappings
+    #4. Save class mappings
     class_mapping = {
         'class_to_idx': train_dataset.class_to_idx,
         'idx_to_class': train_dataset.idx_to_class
@@ -609,11 +618,12 @@ def save_trained_model(classifier, normalizer, train_dataset, save_dir='saved_mo
         json.dump(class_mapping, f, indent=2)
     print(f"Class mapping saved to: {mapping_path}")
     
-    # 4. Save metadata
+    #5. Save metadata
     metadata = {
         'num_classes': len(train_dataset.class_to_idx),
         'classifier_type': type(classifier).__name__,
-        'feature_dim': classifier.n_features_in_ if hasattr(classifier, 'n_features_in_') else None
+        'feature_dim': classifier.n_features_in_ if hasattr(classifier, 'n_features_in_') else None,
+        'dinov2_arch': arch_name
     }
     metadata_path = save_path / 'metadata.json'
     with open(metadata_path, 'w') as f:
@@ -647,7 +657,7 @@ def main():
     ])
     
     # STEP 1: Load DINOv2 Model
-    dinov2_model, feature_dim = load_dinov2_from_kagglehub(device)
+    dinov2_model, feature_dim, arch_name = load_dinov2_from_kagglehub(device)
     
     # STEP 2: Load Training Dataset
     print("Loading Training Dataset")
@@ -677,22 +687,22 @@ def main():
     # STEP 4: Train Classifier
     print("Training Classifier")
 
-    # Random Forest 
-    print("Training Random Forest Classifier...")
-    clf = RandomForestClassifier(
-        n_estimators=200,
-        max_depth=30,
-        min_samples_split=5,
-        n_jobs=-1,
-        random_state=42,
-        verbose=1
-    )
-    clf.fit(X_train, y_train)
-    
-    # # SVM
-    # print("Training SVM Classifier...")
-    # clf = SVC(kernel='rbf', C=1.0, gamma='scale', random_state=42, verbose=False)
+    # # Random Forest 
+    # print("Training Random Forest Classifier...")
+    # clf = RandomForestClassifier(
+    #     n_estimators=200,
+    #     max_depth=30,
+    #     min_samples_split=5,
+    #     n_jobs=-1,
+    #     random_state=42,
+    #     verbose=1
+    # )
     # clf.fit(X_train, y_train)
+    
+    # SVM (better)
+    print("Training SVM Classifier...")
+    clf = SVC(kernel='rbf', C=1.0, gamma='scale', random_state=42, verbose=False)
+    clf.fit(X_train, y_train)
     
     print("Classifier training complete!")
     
@@ -702,6 +712,8 @@ def main():
         classifier=clf,
         normalizer=normalizer,
         train_dataset=train_dataset,
+        dinov2_model=dinov2_model,  
+        arch_name=arch_name, 
         save_dir='saved_models'
     )
     
@@ -710,6 +722,4 @@ def main():
 
 
 if __name__ == "__main__":
-
     main()
-

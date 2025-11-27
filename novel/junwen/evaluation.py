@@ -482,7 +482,7 @@ def evaluate_test_set(model_path, dataset_root, test_list, groundtruth_file, tra
 def main():
     """Main evaluation function"""
     config = {
-        'model_path': 'model5_3/best_enhanced_model.pth',
+        'model_path': 'model/best_enhanced_model.pth',
         'dataset_root': 'dataset',
         'test_list': 'dataset/list/test.txt',
         'groundtruth_file': 'dataset/list/groundtruth.txt',
@@ -511,4 +511,5 @@ def main():
     print(f"Overall Top-5 Accuracy: {top5_acc:.2f}%")
 
 if __name__ == "__main__":
+
     main()

@@ -1,0 +1,30 @@
+{
+    "best_epoch": 15,
+    "best_accuracy": 71.01449275362319,
+    "final_results": {
+        "top1": 71.01449275362319,
+        "top5": 85.5072463768116,
+        "paired_top1": 86.27450980392157,
+        "paired_top5": 96.07843137254902,
+        "unpaired_top1": 27.77777777777778,
+        "unpaired_top5": 55.55555555555556
+    },
+    "training_config": {
+        "phase1_epochs": 30,
+        "phase2_epochs": 40,
+        "pseudo_confidence": 0.85,
+        "lambda_focal": 0.2,
+        "lambda_adv": 0.3,
+        "arcface_s": 20.0,
+        "arcface_m": 0.3,
+        "focal_alpha": 0.25,
+        "focal_gamma": 2.0
+    },
+    "dataset_info": {
+        "num_classes": 100,
+        "total_train_samples": 4744,
+        "classes_with_pairs": 60,
+        "classes_without_pairs": 40,
+        "test_samples": 207
+    }
+}

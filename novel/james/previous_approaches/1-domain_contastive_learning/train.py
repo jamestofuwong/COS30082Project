@@ -27,8 +27,47 @@ CONFIG = {
     'image_size': 224,
     'val_split': 0.2,
     'seed': 42,
-    'save_dir': 'testing'
+    'save_dir': 'testing',
+    'contrastive_weight': 0.1,  # Weight for contrastive loss
+    'temperature': 0.1  # Temperature for contrastive loss
 }
+
+# ==============================================================
+# Domain Contrastive Loss
+# ==============================================================
+class DomainContrastiveLoss(nn.Module):
+    def __init__(self, temperature=0.1):
+        super().__init__()
+        self.temperature = temperature
+        
+    def forward(self, features, domains, labels):
+        # Create positive pairs (same class, different domains) and negative pairs
+        batch_size = features.size(0)
+        
+        # Normalize features
+        features = F.normalize(features, p=2, dim=1)
+        
+        # Compute similarity matrix
+        similarity_matrix = torch.mm(features, features.t()) / self.temperature
+        
+        # Create mask for positive pairs (same class, different domains)
+        label_matrix = labels.unsqueeze(1) == labels.unsqueeze(0)
+        domain_matrix = domains.unsqueeze(1) != domains.unsqueeze(0)
+        positive_mask = label_matrix & domain_matrix
+        
+        # Remove diagonal
+        positive_mask = positive_mask.float()
+        positive_mask.fill_diagonal_(0)
+        
+        # Compute contrastive loss
+        exp_sim = torch.exp(similarity_matrix)
+        positive_sim = torch.sum(exp_sim * positive_mask, dim=1)
+        negative_sim = torch.sum(exp_sim, dim=1) - torch.exp(torch.diag(similarity_matrix))
+        
+        # Avoid division by zero
+        ratio = positive_sim / (negative_sim + 1e-8)
+        loss = -torch.log(ratio + 1e-8).mean()
+        return loss
 
 # ==============================================================
 # Style Normalization Network (SNN)
@@ -54,13 +93,6 @@ class StyleNormalizationNetwork(nn.Module):
         # Project input to output dimension before normalization
         self.input_projection = nn.Linear(input_dim, output_dim)
         
-        # You can keep BatchNorm1d here, but LayerNorm is often more robust for per-sample normalisation:
-        # self.feature_transform = nn.Sequential(
-        #     nn.Linear(output_dim, output_dim),
-        #     nn.LayerNorm(output_dim),
-        #     nn.ReLU(inplace=True),
-        #     nn.Dropout(0.2)
-        # )
         self.feature_transform = nn.Sequential(
             nn.Linear(output_dim, output_dim),
             nn.BatchNorm1d(output_dim),
@@ -91,8 +123,6 @@ class StyleNormalizationNetwork(nn.Module):
         normalized = (x_projected - mean) / std         # (B, output_dim)
         
         # Apply style-specific scaling and shifting elementwise
-        # IMPORTANT: gamma and beta are (B, output_dim) and normalized is (B, output_dim)
-        # Do NOT use .unsqueeze(1) here — keep shapes 2D to match BatchNorm1d's expectations.
         style_normalized = normalized * gamma + beta   # (B, output_dim)
         
         # Final transformation expects (B, output_dim)
@@ -123,23 +153,28 @@ class FocalLoss(nn.Module):
             return focal_loss
 
 class AdaptiveDomainLoss(nn.Module):
-    def __init__(self, alpha=0.3, gamma=2, paired_weight=1.5):
+    def __init__(self, alpha=0.3, gamma=2, paired_weight=1.5, contrastive_weight=0.1, temperature=0.1):
         super().__init__()
         self.focal_loss = FocalLoss(alpha=1, gamma=gamma)
         self.domain_loss = nn.CrossEntropyLoss()
+        self.contrastive_loss = DomainContrastiveLoss(temperature)
         self.alpha = alpha
         self.paired_weight = paired_weight
+        self.contrastive_weight = contrastive_weight
         
-    def forward(self, class_logits, domain_logits, targets, domains, has_pairs):
+    def forward(self, class_logits, domain_logits, features, targets, domains, has_pairs):
         cls_loss = self.focal_loss(class_logits, targets)
         domain_loss = self.domain_loss(domain_logits, domains)
+        contrastive_loss = self.contrastive_loss(features, domains, targets)
         
         paired_mask = torch.tensor(has_pairs, dtype=torch.float32).to(class_logits.device)
         paired_cls_loss = (cls_loss * paired_mask * self.paired_weight).mean()
         unpaired_cls_loss = (cls_loss * (1 - paired_mask)).mean()
         total_cls_loss = paired_cls_loss + unpaired_cls_loss
         
-        return total_cls_loss + self.alpha * domain_loss, cls_loss.mean(), domain_loss
+        total_loss = total_cls_loss + self.alpha * domain_loss + self.contrastive_weight * contrastive_loss
+        
+        return total_loss, cls_loss.mean(), domain_loss, contrastive_loss
 
 # ==============================================================
 # Data Augmentation
@@ -400,7 +435,7 @@ class EnhancedHybridModel(nn.Module):
             nn.Linear(128, 2)
         )
         
-    def forward(self, resnet_input, dinov2_features, domain_alpha=1.0):
+    def forward(self, resnet_input, dinov2_features, domain_alpha=1.0, return_features=False):
         # Extract ResNet features
         resnet_features = self.resnet(resnet_input)
         resnet_features = resnet_features.squeeze(3).squeeze(2)
@@ -416,6 +451,8 @@ class EnhancedHybridModel(nn.Module):
         rev_features = grad_reverse(fused_features, domain_alpha)
         domain_logits = self.domain_classifier(rev_features)
         
+        if return_features:
+            return class_logits, domain_logits, fused_features
         return class_logits, domain_logits
 
 # ==============================================================
@@ -428,7 +465,7 @@ def plot_training_metrics(metrics_file, save_dir):
 
     epochs, train_losses, val_losses = [], [], []
     train_accs, val_accs = [], []
-    cls_losses, domain_losses = [], []
+    cls_losses, domain_losses, contrastive_losses = [], [], []
     paired_accs, unpaired_accs, minority_accs = [], [], []
     learning_rates = []
 
@@ -443,6 +480,7 @@ def plot_training_metrics(metrics_file, save_dir):
                 val_accs.append(float(row['val_acc']))
                 cls_losses.append(float(row.get('cls_loss', 0.0)))
                 domain_losses.append(float(row.get('domain_loss', 0.0)))
+                contrastive_losses.append(float(row.get('contrastive_loss', 0.0)))
                 paired_accs.append(float(row.get('paired_acc', 0.0)))
                 unpaired_accs.append(float(row.get('unpaired_acc', 0.0)))
                 minority_accs.append(float(row.get('minority_acc', 0.0)))
@@ -477,6 +515,7 @@ def plot_training_metrics(metrics_file, save_dir):
     ax = axes[0][2]
     ax.plot(epochs, cls_losses, label='Classification Loss')
     ax.plot(epochs, domain_losses, label='Domain Loss')
+    ax.plot(epochs, contrastive_losses, label='Contrastive Loss')
     ax.set_title('Component Losses')
     ax.set_xlabel('Epoch')
     ax.set_ylabel('Loss')
@@ -563,7 +602,8 @@ def train_enhanced_hybrid_model():
     with open(metrics_file, 'w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(['epoch', 'train_loss', 'val_loss', 'train_acc', 'val_acc', 
-                        'cls_loss', 'domain_loss', 'paired_acc', 'unpaired_acc', 'minority_acc', 'learning_rate'])
+                        'cls_loss', 'domain_loss', 'contrastive_loss', 'paired_acc', 
+                        'unpaired_acc', 'minority_acc', 'learning_rate'])
     
     simple_ds = SimpleDataset(CONFIG['dataset_root'], CONFIG['train_list'])
     dinov2_features, labels, domains, has_pairs = precompute_dinov2_features(simple_ds, device)
@@ -607,8 +647,14 @@ def train_enhanced_hybrid_model():
     resnet_backbone = nn.Sequential(*list(resnet_backbone.children())[:-1])
     resnet_backbone = resnet_backbone.to(device)
     
-    model = EnhancedHybridModel(resnet_backbone, CONFIG['num_classes']).to(device)
-    criterion = AdaptiveDomainLoss(alpha=0.3, gamma=2, paired_weight=1.5)
+    model = EnhancedHybridModel(resnet_backbone, simple_ds.num_classes).to(device)
+    criterion = AdaptiveDomainLoss(
+        alpha=0.3, 
+        gamma=2, 
+        paired_weight=1.5,
+        contrastive_weight=CONFIG['contrastive_weight'],
+        temperature=CONFIG['temperature']
+    )
     optimizer = torch.optim.AdamW(model.parameters(), lr=CONFIG['lr'], weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=CONFIG['epochs'])
     
@@ -617,7 +663,7 @@ def train_enhanced_hybrid_model():
     for epoch in range(1, CONFIG['epochs'] + 1):
         model.train()
         running_loss, running_correct = 0.0, 0
-        running_cls_loss, running_domain_loss = 0.0, 0.0
+        running_cls_loss, running_domain_loss, running_contrastive_loss = 0.0, 0.0, 0.0
         
         current_lr = optimizer.param_groups[0]['lr']
         
@@ -628,9 +674,13 @@ def train_enhanced_hybrid_model():
             labels = labels.to(device)
             domains = domains.to(device)
             
-            class_logits, domain_logits = model(imgs, features, domain_alpha=1.0)
-            total_loss, cls_loss, domain_loss = criterion(
-                class_logits, domain_logits, labels, domains, has_pairs
+            # Get features for contrastive learning
+            class_logits, domain_logits, fused_features = model(
+                imgs, features, domain_alpha=1.0, return_features=True
+            )
+            
+            total_loss, cls_loss, domain_loss, contrastive_loss = criterion(
+                class_logits, domain_logits, fused_features, labels, domains, has_pairs
             )
             
             optimizer.zero_grad()
@@ -640,6 +690,7 @@ def train_enhanced_hybrid_model():
             running_loss += total_loss.item()
             running_cls_loss += cls_loss.item()
             running_domain_loss += domain_loss.item()
+            running_contrastive_loss += contrastive_loss.item()
             
             preds = class_logits.argmax(dim=1)
             running_correct += (preds == labels).sum().item()
@@ -647,6 +698,9 @@ def train_enhanced_hybrid_model():
             if batch_idx % 5 == 0:
                 pbar.set_postfix({
                     'loss': f'{running_loss/(batch_idx+1):.4f}',
+                    'cls': f'{running_cls_loss/(batch_idx+1):.4f}',
+                    'dom': f'{running_domain_loss/(batch_idx+1):.4f}',
+                    'cont': f'{running_contrastive_loss/(batch_idx+1):.4f}',
                     'acc': f'{100.*running_correct/((batch_idx+1)*CONFIG["batch_size"]):.2f}%',
                     'lr': f'{current_lr:.2e}'
                 })
@@ -654,6 +708,7 @@ def train_enhanced_hybrid_model():
         train_loss = running_loss / len(train_loader)
         train_cls_loss = running_cls_loss / len(train_loader)
         train_domain_loss = running_domain_loss / len(train_loader)
+        train_contrastive_loss = running_contrastive_loss / len(train_loader)
         train_acc = 100.0 * running_correct / len(train_ds)
         
         model.eval()
@@ -726,11 +781,13 @@ def train_enhanced_hybrid_model():
         with open(metrics_file, 'a', newline='') as f:
             writer = csv.writer(f)
             writer.writerow([epoch, train_loss, val_loss, train_acc, val_acc, 
-                           train_cls_loss, train_domain_loss, paired_acc, unpaired_acc, minority_acc, current_lr])
+                           train_cls_loss, train_domain_loss, train_contrastive_loss,
+                           paired_acc, unpaired_acc, minority_acc, current_lr])
         
         print(f"\nEpoch {epoch}:")
         print(f"  Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}")
         print(f"  Train Acc: {train_acc:.2f}% | Val Acc: {val_acc:.2f}%")
+        print(f"  Cls Loss: {train_cls_loss:.4f} | Domain Loss: {train_domain_loss:.4f} | Contrastive Loss: {train_contrastive_loss:.4f}")
         print(f"  Paired Classes: {paired_acc:.2f}% | Unpaired Classes: {unpaired_acc:.2f}%")
         print(f"  Minority Classes: {minority_acc:.2f}%")
         print(f"  Learning Rate: {current_lr:.2e}")

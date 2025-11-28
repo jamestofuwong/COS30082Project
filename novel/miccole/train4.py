@@ -104,7 +104,7 @@ def precompute_dinov2_features(dataset, device, save_path="dinov2_features.pth")
         features_dict = torch.load(save_path)
         return features_dict['features'], features_dict['labels'], features_dict['domains'], features_dict['has_pairs']
     
-    print("🔄 Precomputing DINOv2 features...")
+    print("Precomputing DINOv2 features...")
     
     import kagglehub
     import timm
@@ -673,10 +673,10 @@ def train_enhanced_hybrid_model():
             print(f"\nEarly stopping triggered!")
             break
     
-    print(f"\n📈 Generating training plots...")
+    print(f"\nGenerating training plots...")
     plot_training_metrics(metrics_file, CONFIG['save_dir'])
     
-    print(f"\n📊 FINAL MODEL ANALYSIS:")
+    print(f"\nFINAL MODEL ANALYSIS:")
     print(f"   Best Validation Accuracy: {best_val_acc:.2f}%")
     print(f"   Paired Classes Performance: {paired_acc:.2f}%")
     print(f"   Unpaired Classes Performance: {unpaired_acc:.2f}%") 
@@ -694,3 +694,4 @@ if __name__ == "__main__":
 
     print("Starting Training...")
     model, best_acc = train_enhanced_hybrid_model()
+

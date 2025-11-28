@@ -1,0 +1,100 @@
+105951; Maripa glabra Choisy
+106023; Merremia umbellata (L.) Hallier f.
+106387; Costus arabicus L.
+106461; Costus scaber Ruiz Pav.
+106466; Costus spiralis (Jacq.) Roscoe
+110432; Evodianthus funifer (Poit.) Lindm.
+116853; Pteridium arachnoideum (Kaulf.) Maxon
+119986; Olfersia cervina (L.) Kunze
+120497; Diospyros capreifolia Mart. ex Hiern
+121836; Sloanea grandiflora Sm.
+121841; Sloanea guianensis (Aubl.) Benth.
+12254; Anacardium occidentale L.
+12518; Mangifera indica L.
+125412; Sphyrospermum cordifolium Benth.
+126895; Syngonanthus caulescens (Poir.) Ruhland
+127007; Tonina fluviatilis Aubl.
+127097; Erythroxylum fimbriatum Peyr.
+127151; Erythroxylum macrophyllum Cav.
+127242; Erythroxylum squamatum Sw.
+12910; Spondias mombin L.
+12922; Tapirira guianensis Aubl.
+129645; Croton schiedeanus Schltdl.
+130657; Euphorbia cotinifolia L.
+131079; Euphorbia heterophylla L.
+131736; Euphorbia prostrata Aiton
+132107; Euphorbia thymifolia L.
+132113; Euphorbia tithymaloides L.
+132431; Hura crepitans L.
+132476; Jatropha curcas L.
+132501; Jatropha gossypiifolia L.
+13276; Annona ambotay Aubl.
+13325; Annona foetida Mart.
+13330; Annona glabra L.
+133595; Ricinus communis L.
+133617; Sapium glandulosum (L.) Morong
+13370; Annona muricata L.
+136761; Potalia amara Aubl.
+138662; Chrysothemis pulchella (Donn ex Sims) Decne.
+140367; Lembocarpus amoenus Leeuwenb.
+141068; Sinningia incarnata (Aubl.) D.L.Denham
+141332; Dicranopteris flexuosa (Schrad.) Underw.
+141336; Dicranopteris pectinata (Willd.) Underw.
+142550; Heliconia chartacea Lane ex Barreiros
+142736; Hernandia guianensis Aubl.
+143496; Hymenophyllum hirsutum (L.) Sw.
+14353; Guatteria ouregou (Aubl.) Dunal
+143706; Trichomanes diversifrons (Bory) Mett. ex Sadeb.
+143758; Trichomanes punctatum Poir.
+14401; Guatteria scandens Ducke
+144394; Didymochlaena truncatula (Sw.) J. Sm.
+145020; Cipura paludosa Aubl.
+148220; Aegiphila macrantha Ducke
+148977; Clerodendrum paniculatum L.
+149264; Congea tomentosa Roxb.
+149682; Gmelina philippensis Cham.
+149919; Holmskioldia sanguinea Retz.
+150135; Hyptis lanceolata Poir.
+15014; Rollinia mucosa (Jacq.) Baill.
+151469; Ocimum campechianum Mill.
+151593; Orthosiphon aristatus (Blume) Miq.
+15318; Xylopia aromatica (Lam.) Mart.
+15330; Xylopia cayennensis Maas
+15355; Xylopia frutescens Aubl.
+156516; Aniba guianensis Aubl.
+156526; Aniba megaphylla Mez
+158341; Nectandra cissiflora Nees
+158592; Ocotea cernua (Nees) Mez
+158653; Ocotea floribunda (Sw.) Mez
+158736; Ocotea longifolia Kunth
+158793; Ocotea oblonga (Meisn.) Mez
+158833; Ocotea puberula (Rich.) Nees
+159434; Couratari guianensis Aubl.
+159516; Eschweilera parviflora (Aubl.) Miers
+159518; Eschweilera pedicellata (Rich.) S.A.Mori
+160570; Acacia mangium Willd.
+166822; Caesalpinia pulcherrima (L.) Sw.
+166869; Cajanus cajan (L.) Millsp.
+169293; Crotalaria retusa L.
+171727; Erythrina fusca Lour.
+173914; Inga alba (Sw.) Willd.
+173972; Inga capitata Desv.
+174017; Inga edulis Mart.
+177730; Mimosa pigra L.
+177775; Mimosa pudica L.
+189669; Punica granatum L.
+191642; Adansonia digitata L.
+19165; Allamanda cathartica L.
+192311; Ceiba pentandra (L.) Gaertn.
+194035; Hibiscus rosa-sinensis L.
+19489; Asclepias curassavica L.
+209328; Psidium guineense Sw.
+211059; Nephrolepis biserrata (Sw.) Schott
+244705; Averrhoa carambola L.
+248392; Turnera ulmifolia L.
+254180; Piper peltatum L.
+275029; Eichhornia crassipes (Mart.) Solms
+280085; Ceratopteris thalictroides (L.) Brongn.
+280698; Pityrogramma calomelanos (L.) Link
+285398; Cassipourea guianensis Aubl.
+29686; Oreopanax capitatus (Jacq.) Decne. Planch.

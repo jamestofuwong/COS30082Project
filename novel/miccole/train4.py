@@ -692,6 +692,7 @@ if __name__ == "__main__":
     simple_ds = SimpleDataset('dataset', 'dataset/list/train.txt')
     CONFIG['num_classes'] = simple_ds.num_classes
 
-    print("Starting Training...")
+    print("Starting Training... ")
     model, best_acc = train_enhanced_hybrid_model()
+
 

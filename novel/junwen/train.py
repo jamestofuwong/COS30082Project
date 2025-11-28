@@ -1,3 +1,7 @@
+# ==============================================================
+# This is based on Miccole's initial pipeline in the novel approach to add synthetic embedding generation.
+# ==============================================================
+
 import os
 import random
 import csv
@@ -412,6 +416,7 @@ def analyze_folder_distribution(root_dir):
 
 def generate_synthetic_photo_embeddings(features, labels, domains, has_pairs, target_domain=1, 
                                       num_synthetic=1000, noise_scale=0.1, mixup_alpha=0.2):
+    #Filter features from target domain (photo)
     photo_mask = (domains == target_domain)
     photo_features = features[photo_mask]
     photo_labels = labels[photo_mask]
@@ -419,11 +424,14 @@ def generate_synthetic_photo_embeddings(features, labels, domains, has_pairs, ta
     if len(photo_features) == 0:
         print("No photo domain samples found for synthetic generation")
         return None, None, None, None
+    #generate synthetic samples using mixup
     synthetic_features, synthetic_labels = [], []
     synthetic_domains, synthetic_has_pairs = [], []
     for _ in range(num_synthetic):
+        #rnadomly select two samples for mixup
         idx1, idx2 = torch.randint(0, len(photo_features), (2,))
         lam = torch.distributions.Beta(mixup_alpha, mixup_alpha).sample().item()
+        #mix features and add noise
         mixed_features = lam * photo_features[idx1] + (1 - lam) * photo_features[idx2]
         noise = torch.randn_like(mixed_features) * noise_scale
         synthetic_feature = mixed_features + noise
@@ -447,6 +455,7 @@ def generate_synthetic_for_classes(features, labels, domains, has_pairs,
     if not target_classes:
         print("No target classes provided")
         return None, None, None, None
+    #filter features for target classes in perferred domain
     class_mask = torch.isin(labels, torch.tensor(list(target_classes)))
     domain_mask = (domains == preferred_domain)
     combined_mask = class_mask & domain_mask
@@ -460,6 +469,7 @@ def generate_synthetic_for_classes(features, labels, domains, has_pairs,
     synthetic_domains, synthetic_has_pairs = [], []
     for i in range(num_synthetic):
         if len(target_features) >= 2:
+            #use mixup if have at least 2 samples
             idx1, idx2 = torch.randint(0, len(target_features), (2,))
             lam = torch.distributions.Beta(mixup_alpha, mixup_alpha).sample().item()
             synthetic_feature = (lam * target_features[idx1] + (1 - lam) * target_features[idx2])
@@ -468,6 +478,7 @@ def generate_synthetic_for_classes(features, labels, domains, has_pairs,
             synthetic_label = target_labels[idx1]
             synthetic_has_pair = target_has_pairs[idx1]
         else:
+            #simple noise addition if only one sample
             base_idx = torch.randint(0, len(target_features), (1,)).item()
             synthetic_feature = target_features[base_idx] + torch.randn_like(target_features[base_idx]) * (noise_scale * 2)
             synthetic_label = target_labels[base_idx]
@@ -485,25 +496,30 @@ def generate_synthetic_for_classes(features, labels, domains, has_pairs,
 
 def generate_unpaired_focused_synthetic(features, labels, domains, has_pairs, simple_ds,
                                       total_synthetic=2000, unpaired_ratio=0.6):
+    #map original unpaired class labels to new labels
     unpaired_classes = set()
     for orig_label in simple_ds.classes_without_pairs:
         if orig_label in simple_ds.label_map:
             unpaired_classes.add(simple_ds.label_map[orig_label])
+    #calculate number of synthetic samples for each type
     unpaired_synthetic = int(total_synthetic * unpaired_ratio)
     paired_synthetic = total_synthetic - unpaired_synthetic
     print(f"Focused Generation: {unpaired_synthetic} for unpaired, {paired_synthetic} for paired classes")
+    #generate synthetic samples for unpaired classes
     unpaired_results = generate_synthetic_for_classes(
         features, labels, domains, has_pairs,
         target_classes=unpaired_classes,
         num_synthetic=unpaired_synthetic,
         preferred_domain=0
     )
+    #generate ssynthetic samples for photo domain
     paired_results = generate_synthetic_photo_embeddings(
         features, labels, domains, has_pairs,
         num_synthetic=paired_synthetic,
         noise_scale=0.05,
         mixup_alpha=0.3
     )
+    #combine results
     if unpaired_results[0] is not None and paired_results[0] is not None:
         synthetic_features = torch.cat([unpaired_results[0], paired_results[0]], dim=0)
         synthetic_labels = torch.cat([unpaired_results[1], paired_results[1]], dim=0)
@@ -737,3 +753,4 @@ if __name__ == "__main__":
 
     print("Starting Training...")
     model, best_acc = train_enhanced_hybrid_model()
+
